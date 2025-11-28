@@ -1,0 +1,107 @@
+* Git management related:
+
+** List of files to add, remove and ignore:
+
+*** The commit message:
+#+begin_src conf :tangle message.txt
+  Removed stdout stealing in parallel_run
+#+end_src
+
+*** Files to add:
+#+begin_src conf :tangle git_add.txt
+  Cargo.toml
+  .gitignore
+  main.org
+  old.org
+  src/deb_mirror.rs
+  src/download_dist.rs
+  src/mysync.rs
+  src/parallel_run.rs
+#+end_src
+
+*** Files to remove:
+#+begin_src conf :tangle rm.txt
+  Cargo.lock
+  .Cargo.toml.~undo-tree~
+  #main.org#
+  .#main.org
+  main.org~
+  .main.org.~undo-tree~
+  .README.org.~undo-tree~
+  src/.download_dist.rs.~undo-tree~
+  src/mysync.rs~
+  src/.mysync.rs.~undo-tree~
+  src/#parallel_run.rs#
+  src/.parallel_run.rs.~undo-tree~
+#+end_src
+
+*** Files to ignore:
+#+begin_src conf :tangle .gitignore
+  git_add.sh
+  git_add.txt
+  rm.sh
+  rm.txt
+  tmp.sh
+  message.txt
+  shrc_activate.sh
+  shrc_install.sh
+  target/
+#+end_src
+
+** The actual scripts to do the dirty work:
+
+*** Files to add:
+#+begin_src sh :shebang #!/bin/sh :tangle git_add.sh :results output
+  sed "s/^/(git add '/g ; s/\$/');/g" 'git_add.txt' | sh
+#+end_src
+
+*** Files to remove:
+#+begin_src sh :shebang #!/bin/sh :tangle rm.sh :results output
+  sed "s/^/(rm -vf -- '/g ; s/\$/');/g" 'rm.txt' | sh
+#+end_src
+
+** Make all the changes and check status:
+
+*** This file stuff:
+#+begin_src emacs-lisp :results output
+  (save-buffer) 
+  (save-some-buffers) 
+  (org-babel-tangle)
+#+end_src
+
+#+RESULTS:
+
+*** Run the git management parts:
+#+begin_src sh :shebang #!/bin/sh :results output
+  ./git_add.sh
+  ./rm.sh
+  git status
+#+end_src
+
+#+RESULTS:
+#+begin_example
+removed '.main.org.~undo-tree~'
+On branch master
+Your branch is up to date with 'origin/master'.
+
+Changes to be committed:
+  (use "git restore --staged <file>..." to unstage)
+	modified:   Cargo.toml
+	modified:   main.org
+	renamed:    README.org -> old.org
+	modified:   src/download_dist.rs
+	new file:   src/mysync.rs
+
+#+end_example
+
+** Commit the changes and push:
+#+begin_src sh :shebang #!/bin/sh :results output
+  git commit -m "$(cat 'message.txt')"
+  git push 
+#+end_src
+
+#+RESULTS:
+: [master db43f10] Implemented mysync
+:  5 files changed, 112 insertions(+), 87 deletions(-)
+:  rename README.org => old.org (100%)
+:  create mode 100644 src/mysync.rs

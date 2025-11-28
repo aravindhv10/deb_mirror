@@ -1,0 +1,27 @@
+[package]
+name = "deb_mirror"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+reqwest = { version = "*", features = ["json"] }
+tokio = { version = "1", features = ["full"] }
+futures = "0.3"
+rayon = "*"
+sha256 = "*"
+substring = "*"
+
+[[bin]]
+name = "deb_mirror"
+path = "src/deb_mirror.rs"
+
+[[bin]]
+name = "parallel_run"
+path = "src/parallel_run.rs"
+
+[[bin]]
+name = "mysync"
+path = "src/mysync.rs"
+
