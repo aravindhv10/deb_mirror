@@ -1,6 +1,5 @@
 #!/bin/sh
 cd "$('dirname' '--' "${0}")"
-IMAGE_NAME="$(basename -- "$(realpath -- .)")"
 podman run \
     -it --rm \
     '--device' '/dev/dri' \
@@ -11,5 +10,5 @@ podman run \
     -v "${HOME}/BUILD:/data/build" \
     -v "CACHE:/usr/local/cargo/registry" \
     -v "CACHE:/root/.cache" \
-    "${IMAGE_NAME}" zsh \
+    '6_pytorch' zsh \
 ;

@@ -37,7 +37,6 @@
 * Script to run the docker image
 #+begin_src sh :shebang #!/bin/sh :results output :mkdirp yes :tangle ./run_cpu.sh
   cd "$('dirname' '--' "${0}")"
-  IMAGE_NAME="$(basename -- "$(realpath -- .)")"
   podman run \
       -it --rm \
       '--device' '/dev/dri' \
@@ -48,12 +47,14 @@
       -v "${HOME}/BUILD:/data/build" \
       -v "CACHE:/usr/local/cargo/registry" \
       -v "CACHE:/root/.cache" \
-      "${IMAGE_NAME}" zsh \
+      '6_pytorch' zsh \
   ;
 #+end_src
 
 * Files to ignore:
 #+begin_src conf :tangle .gitignore
+	Cargo.lock
+	/target
 #+end_src
 
 * COMMENT Work space
