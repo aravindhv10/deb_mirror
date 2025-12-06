@@ -53,16 +53,32 @@
 
 * Files to ignore:
 #+begin_src conf :tangle .gitignore
-	Cargo.lock
-	/target
+  Cargo.lock
+  /target
 #+end_src
 
 * COMMENT Work space
+
+** Do all pre-processing
 #+begin_src emacs-lisp :results silent
   (save-buffer)
   (org-babel-tangle)
   (async-shell-command "
       './.git.sh'
       'git' 'status'
+  " "log" "err")
+#+end_src
+
+** Commit the changes
+#+begin_src emacs-lisp :results silent
+  (async-shell-command "
+  git commit -m 'Started writing improved deb mirror'
+  " "log" "err")
+#+end_src
+
+** push the changes
+#+begin_src emacs-lisp :results silent
+  (async-shell-command "
+  git push
   " "log" "err")
 #+end_src

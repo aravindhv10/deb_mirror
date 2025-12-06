@@ -65,8 +65,8 @@ async fn read_list_dist_packages() -> String {
     };
 }
 
-async fn mkdir_slave(name_dir: &str) {
-    match tokio::fs::create_dir(name_dir).await {
+async fn mkdir(name_dir: &str) {
+    match tokio::fs::create_dir_all(name_dir).await {
         Ok(_) => {
             println!("Created directory {}", name_dir);
         }
@@ -76,20 +76,7 @@ async fn mkdir_slave(name_dir: &str) {
     };
 }
 
-fn mkdir(name_dir: &str) {
-    let name_dir_s: Vec<&str> = name_dir.split('/').collect();
-    let mut path: String = ".".to_string();
-
-    mkdir_slave(path.as_str());
-
-    for i in 0..name_dir_s.len() - 1 {
-        path.push('/');
-        path.push_str(name_dir_s[i]);
-        mkdir_slave(path.as_str());
-    }
-}
-
-fn _download_wget(url: &str, file_name: &str) -> Result<u8, u8> {
+fn download_wget(url: &str, file_name: &str) -> Result<u8, u8> {
     let result = Command::new("wget")
         .arg("-c")
         .arg(url)
@@ -109,33 +96,12 @@ fn _download_wget(url: &str, file_name: &str) -> Result<u8, u8> {
     }
 }
 
-fn _download_ruget(url: &str, file_name: &str) -> Result<u8, u8> {
-    let result = Command::new("ruget")
-        .arg(url)
-        .arg("-o")
-        .arg(file_name)
-        .status();
-
-    match result {
-        Ok(o) => {
-            println!("Success: {} downloading {} into {}", o, url, file_name);
-            return Ok(0);
-        }
-        Err(e) => {
-            println!("Failed: {} downloading {} into {}", e, url, file_name);
-            return Err(1);
-        }
-    }
-}
-
-#[tokio::main]
-async fn _download_reqwest(url: &str, file_name: &str) -> Result<u8, u8> {
-    match File::create(file_name) {
+async fn download_reqwest(url: &str, file_name: &str) -> Result<u8, u8> {
+    match std::fs::File::create(file_name) {
         Ok(mut dest) => {
             println!("Downloading {}", url);
 
-            let response = reqwest::get(url);
-            let response = response.await;
+            let response = reqwest::get(url).await;
 
             match response {
                 Ok(o) => {
