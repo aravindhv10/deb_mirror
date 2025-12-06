@@ -29,37 +29,44 @@ const WASTE: &str = "WASTE";
 
 const NUM_THREADS: usize = 24;
 
-fn read_file(name_file: &str) -> String {
-    let mut data = String::new();
-
-    match File::open(name_file) {
-        Ok(mut file) => {
-            match file.read_to_string(&mut data) {
-                Ok(_) => {}
-                Err(_) => {
-                    println!("Failed to read the file {}", name_file);
-                }
-            }
-
-            return data;
+async fn read_file(name_file: &str) -> Result<String, String> {
+    match tokio::fs::read_to_string(name_file).await {
+        Ok(contents) => {
+            return Ok(contents);
         }
-        Err(_) => {
-            println!("Failed to open the file {}", name_file);
-            return data;
+        Err(e) => {
+            println!("Failed reading file {} due to {}", name_file, e);
+            return Err("".to_string());
         }
     };
 }
 
-fn read_list_url_mirrors() -> String {
-    read_file("list.url_mirrors.txt")
+async fn read_list_url_mirrors() -> String {
+    match read_file("list.url_mirrors.txt").await {
+        Ok(o) => {
+            return o;
+        }
+        Err(e) => {
+            println!("Failed reading list of url mirrors due to {}", e);
+            return "".to_string();
+        }
+    };
 }
 
-fn read_list_dist_packages() -> String {
-    read_file("list.dist_packages.txt")
+async fn read_list_dist_packages() -> String {
+    match read_file("list.dist_packages.txt").await {
+        Ok(o) => {
+            return o;
+        }
+        Err(e) => {
+            println!("Failed to read list of dist packages due to {}", e);
+            return "".to_string();
+        }
+    };
 }
 
-fn mkdir_slave(name_dir: &str) {
-    match fs::create_dir(name_dir) {
+async fn mkdir_slave(name_dir: &str) {
+    match tokio::fs::create_dir(name_dir).await {
         Ok(_) => {
             println!("Created directory {}", name_dir);
         }
@@ -483,7 +490,7 @@ pub fn download_dist() {
     let files_s: Vec<&str> = files
         .split('\n')
         .filter(|x| x.len() > 0)
-        .map(|x|{
+        .map(|x| {
             mkdir(x);
             link_pool_in_dist(x);
             x
