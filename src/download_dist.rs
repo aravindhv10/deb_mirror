@@ -3,16 +3,17 @@ extern crate reqwest;
 extern crate sha256;
 extern crate substring;
 
+use anyhow::Context;
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fs;
-use std::fs::File;
 use std::io::prelude::*;
 use std::path::Path;
-use std::process::Command;
+use std::process::ExitStatus;
 use std::sync::Mutex;
 use substring::Substring;
+use tokio::io::AsyncReadExt;
 
 const TEXT_PACKAGE: &str = "Package: ";
 const TEXT_VERSION: &str = "Version: ";
@@ -29,124 +30,58 @@ const WASTE: &str = "WASTE";
 
 const NUM_THREADS: usize = 24;
 
-async fn read_file(name_file: &str) -> Result<String, String> {
-    match tokio::fs::read_to_string(name_file).await {
-        Ok(contents) => {
-            return Ok(contents);
-        }
-        Err(e) => {
-            println!("Failed reading file {} due to {}", name_file, e);
-            return Err("".to_string());
-        }
-    };
+async fn read_list_url_mirrors() -> anyhow::Result<String> {
+    tokio::fs::read_to_string("list.url_mirrors.txt")
+        .await
+        .with_context(|| format!("failed to read list.url_mirrors.txt"))
 }
 
-async fn read_list_url_mirrors() -> String {
-    match read_file("list.url_mirrors.txt").await {
-        Ok(o) => {
-            return o;
-        }
-        Err(e) => {
-            println!("Failed reading list of url mirrors due to {}", e);
-            return "".to_string();
-        }
-    };
+async fn read_list_dist_packages() -> anyhow::Result<String> {
+    tokio::fs::read_to_string("list.dist_packages.txt")
+        .await
+        .with_context(|| format!("failed to read list.dist_packages.txt"))
 }
 
-async fn read_list_dist_packages() -> String {
-    match read_file("list.dist_packages.txt").await {
-        Ok(o) => {
-            return o;
-        }
-        Err(e) => {
-            println!("Failed to read list of dist packages due to {}", e);
-            return "".to_string();
-        }
-    };
-}
-
-async fn mkdir(name_dir: &str) {
-    match tokio::fs::create_dir_all(name_dir).await {
-        Ok(_) => {
-            println!("Created directory {}", name_dir);
-        }
-        Err(_) => {
-            println!("Failed to create directory {}", name_dir);
-        }
-    };
-}
-
-fn download_wget(url: &str, file_name: &str) -> Result<u8, u8> {
-    let result = Command::new("wget")
+async fn download_wget(url: &str, file_name: &str) -> anyhow::Result<ExitStatus> {
+    tokio::process::Command::new("wget")
         .arg("-c")
         .arg(url)
         .arg("-O")
         .arg(file_name)
-        .status();
-
-    match result {
-        Ok(o) => {
-            println!("Success: {} downloading {} into {}", o, url, file_name);
-            return Ok(0);
-        }
-        Err(e) => {
-            println!("Failed: {} downloading {} into {}", e, url, file_name);
-            return Err(1);
-        }
-    }
+        .status()
+        .await
+        .with_context(|| format!("Failed to download url {} to file {}", url, file_name))
 }
 
-async fn download_reqwest(url: &str, file_name: &str) -> Result<u8, u8> {
-    match std::fs::File::create(file_name) {
-        Ok(mut dest) => {
-            println!("Downloading {}", url);
+async fn download_reqwest(url: &str, file_name: impl AsRef<Path>) -> anyhow::Result<()> {
+    let response = reqwest::get(url)
+        .await
+        .with_context(|| format!("Failed to send request to URL: {}", url))?;
 
-            let response = reqwest::get(url).await;
+    let response = response
+        .error_for_status()
+        .with_context(|| format!("Server returned an error for {}", url))?;
 
-            match response {
-                Ok(o) => {
-                    let response = o;
-                    let content = response.bytes();
-                    let content = content.await;
+    let path = file_name.as_ref();
+    let mut dest = tokio::fs::File::create(path)
+        .await
+        .with_context(|| format!("Failed to create file at {:?}", path))?;
 
-                    match content {
-                        Ok(content) => {
-                            let mut pos: usize = 0;
-                            while pos < content.len() {
-                                match dest.write(&content[pos..]) {
-                                    Ok(o) => {
-                                        pos += o;
-                                    }
-                                    Err(_) => {
-                                        println!("Failed to write data into the file");
-                                        return Err(4);
-                                    }
-                                }
-                            }
-                            println!("Successfully downloaded the file {}", file_name);
-                            return Ok(0);
-                        }
-                        Err(_) => {
-                            println!("Failed to get content in download {}", url);
-                            return Err(3);
-                        }
-                    };
-                }
-                Err(_) => {
-                    println!("Failed response in download {}", url);
-                    return Err(2);
-                }
-            };
-        }
-        Err(_) => {
-            println!("Failed to create file {}", file_name);
-            return Err(1);
-        }
-    };
+    let mut content = response
+        .bytes()
+        .await
+        .context("Failed to read response bytes")?;
+
+    let mut content_cursor = std::io::Cursor::new(content);
+    tokio::io::copy(&mut content_cursor, &mut dest)
+        .await
+        .with_context(|| format!("Failed to write data to {:?}", path))?;
+
+    Ok(())
 }
 
 fn download(url: &str, file_name: &str) -> Result<u8, u8> {
-    _download_reqwest(url, file_name)
+    download_reqwest(url, file_name)
 }
 
 fn do_link(sha: &str, loc: &str) {
