@@ -80,12 +80,18 @@ async fn download_reqwest(url: &str, file_name: impl AsRef<Path>) -> anyhow::Res
     Ok(())
 }
 
-fn download(url: &str, file_name: &str) -> Result<u8, u8> {
-    download_reqwest(url, file_name)
+async fn download(url: &str, file_name: &str) -> anyhow::Result<()> {
+    download_reqwest(url, file_name).await
 }
 
-fn do_link(sha: &str, loc: &str) {
-    mkdir(loc);
+async fn do_link(sha: &str, loc: &str) -> anyhow::Result<()> {
+    match std::path::Path::new(loc).parent() {
+        Some(parent_dir) => {
+            tokio::fs::create_dir_all(parent_dir).await;
+        }
+        None => {}
+    };
+
     let mut counts: i16 = 0;
     loc.split('/').for_each(|x| {
         if x.eq("..") {

@@ -12,6 +12,7 @@ futures = "0.3"
 rayon = "*"
 sha256 = "*"
 substring = "*"
+anyhow = "1.0.100"
 
 [[bin]]
 name = "deb_mirror"
@@ -24,4 +25,3 @@ path = "src/parallel_run.rs"
 [[bin]]
 name = "mysync"
 path = "src/mysync.rs"
-
