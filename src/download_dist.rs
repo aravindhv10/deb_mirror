@@ -67,7 +67,7 @@ async fn download_reqwest(url: &str, file_name: impl AsRef<Path>) -> anyhow::Res
         .await
         .with_context(|| format!("Failed to create file at {:?}", path))?;
 
-    let mut content = response
+    let content = response
         .bytes()
         .await
         .context("Failed to read response bytes")?;
@@ -87,7 +87,7 @@ async fn download(url: &str, file_name: &str) -> anyhow::Result<()> {
 async fn do_link(sha: &str, loc: &str) -> anyhow::Result<()> {
     match std::path::Path::new(loc).parent() {
         Some(parent_dir) => {
-            tokio::fs::create_dir_all(parent_dir).await;
+            tokio::fs::create_dir_all(parent_dir).await?;
         }
         None => {}
     };
@@ -106,18 +106,14 @@ async fn do_link(sha: &str, loc: &str) -> anyhow::Result<()> {
     }
     dest.push_str("SHA256/");
     dest.push_str(sha);
-    match std::os::unix::fs::symlink(&dest, &loc) {
-        Ok(_) => {
-            println!("linked {}", dest);
-        }
-        Err(_) => {
-            println!("Failed to link {}", dest);
-        }
-    };
+
+    tokio::fs::symlink(/*original = */ &dest, /*link = */ &loc)
+        .await
+        .with_context(|| format!("Failed creating symlink from {} to {}", loc, dest))
 }
 
-fn read_packages() -> HashMap<String, (String, String)> {
-    let files_1 = read_list_dist_packages();
+async fn read_packages() -> anyhow::Result<HashMap<String, (String, String)>> {
+    let files_1 = read_list_dist_packages().await?;
     println!("{:?}", files_1);
     let mut files_2: String = String::new();
 
