@@ -115,7 +115,6 @@ async fn do_link(sha: &str, loc: &str) -> anyhow::Result<()> {
 async fn read_packages() -> anyhow::Result<HashMap<String, (String, String)>> {
     let files_1 = read_list_dist_packages().await?;
     println!("{:?}", files_1);
-    let mut files_2: String = String::new();
 
     fn match_begin(in_str: &str, pattern: &str) -> bool {
         if in_str.len() > pattern.len() {
@@ -157,14 +156,16 @@ async fn read_packages() -> anyhow::Result<HashMap<String, (String, String)>> {
         }
     }
 
-    files_1
-        .split('\n')
-        .filter(|x| has_packages(x))
-        .for_each(|x| {
-            println!("Got package {}", x);
-            files_2.push_str(read_file(x).as_str());
-            files_2.push('\n');
-        });
+    let mut files_2: String = String::new();
+
+    for x in files_1.split('\n').filter(|x| has_packages(x)) {
+        println!("Got package {}", x);
+        let package_file_contents = tokio::fs::read_to_string(x)
+            .await
+            .with_context(|| format!("failed to read the Packages file {}", x))?;
+        files_2.push_str(package_file_contents.as_str());
+        files_2.push('\n');
+    }
 
     let mut meta_data: HashMap<String, (String, String)> = HashMap::new();
 
@@ -213,7 +214,7 @@ async fn read_packages() -> anyhow::Result<HashMap<String, (String, String)>> {
         };
     });
 
-    return meta_data;
+    return Ok(meta_data);
 }
 
 fn link_pool_in_dist(file_name: &str) {
