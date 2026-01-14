@@ -99,7 +99,10 @@ async fn mkdir(loc: &str) -> anyhow::Result<()> {
 async fn do_link(sha: &str, loc: &str) -> anyhow::Result<()> {
     match std::path::Path::new(loc).parent() {
         Some(parent_dir) => {
-            tokio::fs::create_dir_all(parent_dir).await?;
+            match tokio::fs::create_dir_all(parent_dir).await {
+                Ok(o) => {}
+                Err(e) => {}
+            };
         }
         None => {}
     };
@@ -124,7 +127,14 @@ async fn do_link(sha: &str, loc: &str) -> anyhow::Result<()> {
         .with_context(|| format!("Failed creating symlink from {} to {}", loc, dest))
 }
 
-async fn read_packages() -> anyhow::Result<HashMap<String, (String, String)>> {
+struct package_pair {
+    sha256: String,
+    filename: String,
+}
+
+type package_pair_list = Vec<package_pair>;
+
+async fn read_packages() -> anyhow::Result<package_pair_list> {
     let files_1 = read_list_dist_packages().await?;
     println!("{:?}", files_1);
 
@@ -183,7 +193,7 @@ async fn read_packages() -> anyhow::Result<HashMap<String, (String, String)>> {
         return Err(anyhow::format_err!("Failed to read any packages"));
     }
 
-    let mut meta_data: HashMap<String, (String, String)> = HashMap::new();
+    let mut meta_data = package_pair_list::new();
 
     let mut filename: String = String::new();
     let mut sha256: String = String::new();
@@ -224,7 +234,10 @@ async fn read_packages() -> anyhow::Result<HashMap<String, (String, String)>> {
                 if match_begin(x, TEXT_SHA256) {
                     sha256 = String::from(x.substring(TEXT_SHA256.len(), x.len()));
                     current_state = LoopState::NeedPackage;
-                    meta_data.insert(sha256.clone(), (filename.clone(), version.clone()));
+                    meta_data.push(package_pair {
+                        sha256: sha256.clone(),
+                        filename: filename.clone(),
+                    });
                 }
             }
         };
@@ -259,21 +272,19 @@ async fn link_pool_in_dist(file_name: &str) {
 }
 
 pub async fn link_pool() -> anyhow::Result<()> {
-    {
-        let files = read_list_dist_packages().await?;
-        files.split('\n').filter(|x| x.len() > 0).for_each(|x| {
-            mkdir(x);
-            link_pool_in_dist(x);
-        });
-    }
+    let files = read_list_dist_packages().await?;
+    files.split('\n').filter(|x| x.len() > 0).for_each(|x| {
+        mkdir(x);
+        link_pool_in_dist(x);
+    });
 
     let meta_data = read_packages().await?;
 
-    meta_data
-        .par_iter()
-        .for_each(|(sha256, (filename, _version))| {
-            do_link(sha256, filename);
-        });
+    meta_data.par_iter().for_each(|x| {
+        do_link(x.sha256.as_str(), x.filename.as_str());
+    });
+
+    Ok(())
 }
 
 pub fn clean_sha() {
