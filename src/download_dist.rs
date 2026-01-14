@@ -84,6 +84,18 @@ async fn download(url: &str, file_name: &str) -> anyhow::Result<()> {
     download_reqwest(url, file_name).await
 }
 
+async fn mkdir(loc: &str) -> anyhow::Result<()> {
+    match std::path::Path::new(loc).parent() {
+        Some(parent_dir) => tokio::fs::create_dir_all(parent_dir)
+            .await
+            .with_context(|| format!("Failed to create directory {:?}", parent_dir)),
+        None => Err(anyhow::format_err!(
+            "invalid location {}, could not create directory.",
+            loc
+        )),
+    }
+}
+
 async fn do_link(sha: &str, loc: &str) -> anyhow::Result<()> {
     match std::path::Path::new(loc).parent() {
         Some(parent_dir) => {
@@ -167,6 +179,10 @@ async fn read_packages() -> anyhow::Result<HashMap<String, (String, String)>> {
         files_2.push('\n');
     }
 
+    if files_2.len() == 0 {
+        return Err(anyhow::format_err!("Failed to read any packages"));
+    }
+
     let mut meta_data: HashMap<String, (String, String)> = HashMap::new();
 
     let mut filename: String = String::new();
@@ -217,7 +233,7 @@ async fn read_packages() -> anyhow::Result<HashMap<String, (String, String)>> {
     return Ok(meta_data);
 }
 
-fn link_pool_in_dist(file_name: &str) {
+async fn link_pool_in_dist(file_name: &str) {
     let loc: Vec<&str> = file_name.split('/').collect();
 
     let mut out = String::new();
@@ -230,7 +246,7 @@ fn link_pool_in_dist(file_name: &str) {
             let mut dest: String = out.clone();
             dest.push_str("pool");
 
-            match std::os::unix::fs::symlink("../pool", &dest) {
+            match tokio::fs::symlink(/*original = */ "../pool", /*link = */ &dest).await {
                 Ok(_) => {
                     println!("linked pool in dist {}", &dest);
                 }
@@ -242,22 +258,22 @@ fn link_pool_in_dist(file_name: &str) {
     }
 }
 
-pub fn link_pool() {
+pub async fn link_pool() -> anyhow::Result<()> {
     {
-        let files = read_list_dist_packages();
+        let files = read_list_dist_packages().await?;
         files.split('\n').filter(|x| x.len() > 0).for_each(|x| {
             mkdir(x);
             link_pool_in_dist(x);
         });
     }
 
-    let meta_data = read_packages();
+    let meta_data = read_packages().await?;
 
     meta_data
         .par_iter()
         .for_each(|(sha256, (filename, _version))| {
             do_link(sha256, filename);
-        })
+        });
 }
 
 pub fn clean_sha() {
