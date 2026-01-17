@@ -271,6 +271,21 @@ async fn link_pool_in_dist(file_name: &str) {
     }
 }
 
+async fn link_pool_package(
+    x: std::sync::Arc<package_pair_list>,
+    j: std::sync::Arc<std::sync::atomic::AtomicU64>,
+) {
+    loop {
+        let idx = j.fetch_add(1, std::sync::atomic::Ordering::Relaxed) as usize;
+        if idx < x.len() {
+            let item = &x[idx];
+            do_link(item.sha256.as_str(), item.filename.as_str());
+        } else {
+            break;
+        }
+    }
+}
+
 pub async fn link_pool() -> anyhow::Result<()> {
     let files = read_list_dist_packages().await?;
     files.split('\n').filter(|x| x.len() > 0).for_each(|x| {
@@ -279,6 +294,8 @@ pub async fn link_pool() -> anyhow::Result<()> {
     });
 
     let meta_data = read_packages().await?;
+
+    let counter: std::sync::atomic::AtomicU64 = 0.into();
 
     meta_data.par_iter().for_each(|x| {
         do_link(x.sha256.as_str(), x.filename.as_str());
