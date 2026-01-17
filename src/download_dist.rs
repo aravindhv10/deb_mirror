@@ -368,16 +368,16 @@ pub async fn clean_sha() -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn download_pool() {
-    mkdir_slave(STORE);
-    mkdir_slave(TMP);
-
-    let base_1 = read_list_url_mirrors();
+pub async fn download_pool() -> anyhow::Result<()> {
+    tokio::fs::create_dir_all(STORE).await?;
+    tokio::fs::create_dir_all(TMP).await?;
+    let base_1 = read_list_url_mirrors().await?;
     let base_2: Vec<&str> = base_1.split('\n').filter(|x| x.len() > 7).collect();
     println!("{:?}", base_2);
 
-    let meta_data = read_packages();
+    let meta_data = read_packages().await?;
     println!("{:?}", meta_data);
+    return Ok(());
     let m = Mutex::new(0);
 
     let pool = rayon::ThreadPoolBuilder::new()
