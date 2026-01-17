@@ -334,7 +334,12 @@ async fn move_file_from_waste_to_sha256_list(
             let end = std::cmp::min(begin + b as usize, x.len());
             for i in begin..end {
                 let item = &x[i];
-                move_file_from_waste_to_sha256(/*sha256: &str = */ item.as_str()).await;
+                match move_file_from_waste_to_sha256(item.as_str()).await {
+                    Ok(_) => {}
+                    Err(e) => {
+                        println!("Failed to find the file {} while cleaning", item);
+                    }
+                }
             }
         } else {
             break;
@@ -343,49 +348,24 @@ async fn move_file_from_waste_to_sha256_list(
 }
 
 pub async fn clean_sha() -> anyhow::Result<()> {
-    let meta_data = read_packages().await?;
-    let meta_data: Vec<String> = meta_data.into_iter().map(|x| x.sha256).collect();
-    let meta_data = std::sync::Arc::new(meta_data);
+    let packages = read_packages().await?;
+    let shas: Vec<String> = packages.into_iter().map(|x| x.sha256).collect();
+    let shas_ref = std::sync::Arc::new(shas);
 
     let counter = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
     const num_threads: u16 = 16;
     let mut handles = Vec::new();
 
     for _ in 0..num_threads {
-        let data_ref = std::sync::Arc::clone(&meta_data);
+        let data_ref = std::sync::Arc::clone(&shas_ref);
         let index_ref = std::sync::Arc::clone(&counter);
-        handles.push(link_pool_package(data_ref, index_ref));
+        let tmp = move_file_from_waste_to_sha256_list(data_ref, index_ref);
+        handles.push(tmp);
     }
 
     futures::future::join_all(handles).await;
 
-    match fs::rename(STORE, WASTE) {
-        Ok(_) => {
-            mkdir_slave(STORE);
-            meta_data
-                .par_iter()
-                // .for_each(|(sha256, (_filename, _version))| {
-                .for_each(|(sha256, _a)| {
-                    let mut src = String::from(WASTE);
-                    src.push('/');
-                    src.push_str(sha256);
-
-                    let mut dst = String::from(STORE);
-                    dst.push('/');
-                    dst.push_str(sha256);
-
-                    match fs::rename(src, dst) {
-                        Ok(_) => {}
-                        Err(_) => {
-                            println!("Failed in renaming step...");
-                        }
-                    };
-                });
-        }
-        Err(_) => {
-            println!("Failed to move sha256 to waste");
-        }
-    }
+    Ok(())
 }
 
 pub fn download_pool() {
