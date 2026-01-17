@@ -368,12 +368,16 @@ pub async fn clean_sha() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn download_sha256_in_pool(sha256: &str, filename: &str) -> anyhow::Result<()> {
+async fn download_sha256_in_pool(
+    sha256: &str,
+    filename: &str,
+    base_2: std::sync::Arc<Vec<&str>>,
+) -> anyhow::Result<()> {
     let mut exp_dest: String = String::from(STORE);
     exp_dest.push('/');
     exp_dest.push_str(sha256);
 
-    if !Path::new(exp_dest.as_str()).exists() {
+    if !tokio::fs::try_exists(exp_dest.as_str()).await? {
         let dest: String = {
             let mut tmpstr: String = String::from(TMP);
             tmpstr.push('/');
