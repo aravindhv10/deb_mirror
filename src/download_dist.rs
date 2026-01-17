@@ -249,25 +249,14 @@ async fn read_packages() -> anyhow::Result<package_pair_list> {
 
 async fn link_pool_in_dist(file_name: &str) {
     let loc: Vec<&str> = file_name.split('/').collect();
-
     let mut out = String::new();
-
     for i in 0..loc.len() - 1 {
         if !loc[i].eq(".") {
             out.push_str(loc[i]);
             out.push('/');
-
             let mut dest: String = out.clone();
             dest.push_str("pool");
-
-            match tokio::fs::symlink(/*original = */ "../pool", /*link = */ &dest).await {
-                Ok(_) => {
-                    println!("linked pool in dist {}", &dest);
-                }
-                Err(_) => {
-                    println!("failed link pool in dist {}", &dest);
-                }
-            };
+            let _res = tokio::fs::symlink(/*original = */ "../pool", /*link = */ &dest).await;
         }
     }
 }
@@ -283,7 +272,7 @@ async fn link_pool_package(
             let end = std::cmp::min(begin + batch_size as usize, x.len());
             for idx in begin..end {
                 let item = &x[idx];
-                do_link(item.sha256.as_str(), item.filename.as_str());
+                let _res = do_link(item.sha256.as_str(), item.filename.as_str()).await;
             }
         } else {
             break;
@@ -300,7 +289,7 @@ pub async fn link_pool() -> anyhow::Result<()> {
 
     let meta_data = std::sync::Arc::new(read_packages().await?);
     let counter = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
-    let num_threads = 16;
+    const num_threads: u16 = 16;
     let mut handles = Vec::new();
 
     for _ in 0..num_threads {
@@ -314,8 +303,61 @@ pub async fn link_pool() -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn clean_sha() {
-    let meta_data = read_packages();
+async fn move_file_from_waste_to_sha256(sha256: &str) -> anyhow::Result<()> {
+    let mut src = String::from(WASTE);
+    src.push('/');
+    src.push_str(sha256);
+
+    let mut dst = String::from(STORE);
+    dst.push('/');
+    dst.push_str(sha256);
+
+    tokio::fs::rename(src.as_str(), dst.as_str())
+        .await
+        .with_context(|| {
+            format!(
+                "Failed to link the file {} to {}",
+                src.as_str(),
+                dst.as_str()
+            )
+        })
+}
+
+async fn move_file_from_waste_to_sha256_list(
+    x: std::sync::Arc<Vec<String>>,
+    y: std::sync::Arc<std::sync::atomic::AtomicU64>,
+) {
+    const b: u64 = 16 as u64;
+    loop {
+        let begin = y.fetch_add(b, std::sync::atomic::Ordering::Relaxed) as usize;
+        if begin < x.len() {
+            let end = std::cmp::min(begin + b as usize, x.len());
+            for i in begin..end {
+                let item = &x[i];
+                move_file_from_waste_to_sha256(/*sha256: &str = */ item.as_str()).await;
+            }
+        } else {
+            break;
+        }
+    }
+}
+
+pub async fn clean_sha() -> anyhow::Result<()> {
+    let meta_data = read_packages().await?;
+    let meta_data: Vec<String> = meta_data.into_iter().map(|x| x.sha256).collect();
+    let meta_data = std::sync::Arc::new(meta_data);
+
+    let counter = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+    const num_threads: u16 = 16;
+    let mut handles = Vec::new();
+
+    for _ in 0..num_threads {
+        let data_ref = std::sync::Arc::clone(&meta_data);
+        let index_ref = std::sync::Arc::clone(&counter);
+        handles.push(link_pool_package(data_ref, index_ref));
+    }
+
+    futures::future::join_all(handles).await;
 
     match fs::rename(STORE, WASTE) {
         Ok(_) => {
