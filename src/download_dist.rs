@@ -5,6 +5,7 @@ extern crate substring;
 
 use anyhow::Context;
 use rayon::prelude::*;
+use std::cmp::min;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fs;
@@ -275,11 +276,15 @@ async fn link_pool_package(
     x: std::sync::Arc<package_pair_list>,
     j: std::sync::Arc<std::sync::atomic::AtomicU64>,
 ) {
+    const batch_size: u64 = 16 as u64;
     loop {
-        let idx = j.fetch_add(1, std::sync::atomic::Ordering::Relaxed) as usize;
-        if idx < x.len() {
-            let item = &x[idx];
-            do_link(item.sha256.as_str(), item.filename.as_str());
+        let begin = j.fetch_add(batch_size, std::sync::atomic::Ordering::Relaxed) as usize;
+        if begin < x.len() {
+            let end = std::cmp::min(begin + batch_size as usize, x.len());
+            for idx in begin..end {
+                let item = &x[idx];
+                do_link(item.sha256.as_str(), item.filename.as_str());
+            }
         } else {
             break;
         }
@@ -293,13 +298,18 @@ pub async fn link_pool() -> anyhow::Result<()> {
         link_pool_in_dist(x);
     });
 
-    let meta_data = read_packages().await?;
+    let meta_data = std::sync::Arc::new(read_packages().await?);
+    let counter = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let num_threads = 16;
+    let mut handles = Vec::new();
 
-    let counter: std::sync::atomic::AtomicU64 = 0.into();
+    for _ in 0..num_threads {
+        let data_ref = std::sync::Arc::clone(&meta_data);
+        let index_ref = std::sync::Arc::clone(&counter);
+        handles.push(link_pool_package(data_ref, index_ref));
+    }
 
-    meta_data.par_iter().for_each(|x| {
-        do_link(x.sha256.as_str(), x.filename.as_str());
-    });
+    futures::future::join_all(handles).await;
 
     Ok(())
 }
