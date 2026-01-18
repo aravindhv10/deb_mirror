@@ -439,93 +439,58 @@ async fn download_package_list_in_pool(
     base_2: std::sync::Arc<Vec<&str>>,
     counter: std::sync::Arc<std::sync::atomic::AtomicU64>,
 ) -> anyhow::Result<()> {
+    const batch_size: u64 = 2 as u64;
+    loop {
+        let begin = counter.fetch_add(batch_size, std::sync::atomic::Ordering::Relaxed) as usize;
+        if begin < inputs.len() {
+            let end = std::cmp::min(begin + batch_size as usize, inputs.len());
+            for i in begin..end {
+                let item = &inputs[i];
+                let index = i;
+                for num_tries in 0..base_2.len() {
+                    let url = base_2[(index + num_tries) % base_2.len()];
+                    match download_sha256_in_pool(&item.sha256, &item.filename, url).await {
+                        Err(e) => {
+                            println!("Failed to download the file {} from mirror {} due to {}, trying with a different mirror", item.filename, url, e);
+                        }
+                        Ok(_) => {
+                            println!("Downloaded the file {}", item.filename);
+                            break;
+                        }
+                    }
+                }
+            }
+        } else {
+            break;
+        }
+    }
     Ok(())
 }
 
 pub async fn download_pool() -> anyhow::Result<()> {
     tokio::fs::create_dir_all(STORE).await?;
     tokio::fs::create_dir_all(TMP).await?;
+
     let base_1 = read_list_url_mirrors().await?;
     let base_2: Vec<&str> = base_1.split('\n').filter(|x| x.len() > 7).collect();
-    println!("{:?}", base_2);
+    let urls = std::sync::Arc::new(base_2);
 
-    let meta_data = read_packages().await?;
-    println!("{:?}", meta_data);
+    let meta_data = std::sync::Arc::new(read_packages().await?);
+    let counter = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+
+    const num_threads: u16 = 16;
+    let mut handles = Vec::new();
+
+    for _ in 0..num_threads {
+        let data_ref = std::sync::Arc::clone(&meta_data);
+        let index_ref = std::sync::Arc::clone(&counter);
+        let tmp = download_package_list_in_pool(data_ref, std::sync::Arc::clone(&urls), index_ref);
+        handles.push(tmp);
+    }
+
+    futures::future::join_all(handles).await;
+
     return Ok(());
-
-    pool.install(|| {
-        meta_data
-            .par_iter()
-            .for_each(|(sha256, (filename, _version))| {
-                let mut exp_dest: String = String::from(STORE);
-                exp_dest.push('/');
-                exp_dest.push_str(sha256);
-
-                if !Path::new(exp_dest.as_str()).exists() {
-                    let dest: String = {
-                        let mut tmpstr: String = String::from(TMP);
-                        tmpstr.push('/');
-                        tmpstr.push_str(sha256);
-                        tmpstr
-                    };
-
-                    let mut do_loop: u8 = 4;
-
-                    while do_loop > 0 {
-                        let url: String = {
-                            let index: usize = {
-                                let mut num = m.lock().unwrap();
-                                let old = *num % base_2.len();
-                                *num = (*num + 1) % base_2.len();
-                                old
-                            };
-
-                            let mut ret = String::from(base_2[index]);
-
-                            ret.push('/');
-                            ret.push_str(filename);
-                            ret
-                        };
-
-                        match download(url.as_str(), dest.as_str()) {
-                            Ok(_) => {
-                                let data = std::fs::read(&dest).unwrap();
-                                let data: &[u8] = &data;
-
-                                let hash = sha256::digest(data);
-                                let validity: bool = sha256.eq(hash.as_str());
-
-                                if validity {
-                                    let final_dest: String = {
-                                        let mut tmpstr: String = String::from(STORE);
-                                        tmpstr.push('/');
-                                        tmpstr.push_str(hash.as_str());
-                                        tmpstr
-                                    };
-
-                                    match fs::rename(dest.as_str(), final_dest.as_str()) {
-                                        Ok(_) => {
-                                            do_loop = 0;
-                                        }
-                                        Err(_) => {
-                                            println!("Failed to move {} to {}", dest, final_dest);
-                                        }
-                                    };
-                                } else {
-                                    do_loop -= 1;
-                                    println!("Hash did not match, try downloading again later...");
-                                }
-                            }
-                            Err(_) => {
-                                println!("Failed downloading, trying again {}", filename);
-                            }
-                        };
-                    }
-                } else {
-                    println!("{} already exists", exp_dest);
-                }
-            });
-    });
 }
 
 pub fn download_dist() {
