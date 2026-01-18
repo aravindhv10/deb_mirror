@@ -128,6 +128,7 @@ async fn do_link(sha: &str, loc: &str) -> anyhow::Result<()> {
         .with_context(|| format!("Failed creating symlink from {} to {}", loc, dest))
 }
 
+#[derive(Debug)]
 struct package_pair {
     sha256: String,
     filename: String,
@@ -371,76 +372,73 @@ pub async fn clean_sha() -> anyhow::Result<()> {
 async fn download_sha256_in_pool(
     sha256: &str,
     filename: &str,
-    base_2: std::sync::Arc<Vec<&str>>,
+    base_url: &str,
 ) -> anyhow::Result<()> {
-    let mut exp_dest: String = String::from(STORE);
-    exp_dest.push('/');
-    exp_dest.push_str(sha256);
+    let final_dest: String = {
+        let mut tmp: String = String::from(STORE);
+        tmp.push('/');
+        tmp.push_str(sha256);
+        tmp
+    };
 
-    if !tokio::fs::try_exists(exp_dest.as_str()).await? {
-        let dest: String = {
-            let mut tmpstr: String = String::from(TMP);
-            tmpstr.push('/');
-            tmpstr.push_str(sha256);
-            tmpstr
-        };
-
-        let mut do_loop: u8 = 4;
-
-        while do_loop > 0 {
-            let url: String = {
-                let index: usize = {
-                    let mut num = m.lock().unwrap();
-                    let old = *num % base_2.len();
-                    *num = (*num + 1) % base_2.len();
-                    old
-                };
-
-                let mut ret = String::from(base_2[index]);
-
-                ret.push('/');
-                ret.push_str(filename);
-                ret
-            };
-
-            match download(url.as_str(), dest.as_str()) {
-                Ok(_) => {
-                    let data = std::fs::read(&dest).unwrap();
-                    let data: &[u8] = &data;
-
-                    let hash = sha256::digest(data);
-                    let validity: bool = sha256.eq(hash.as_str());
-
-                    if validity {
-                        let final_dest: String = {
-                            let mut tmpstr: String = String::from(STORE);
-                            tmpstr.push('/');
-                            tmpstr.push_str(hash.as_str());
-                            tmpstr
-                        };
-
-                        match fs::rename(dest.as_str(), final_dest.as_str()) {
-                            Ok(_) => {
-                                do_loop = 0;
-                            }
-                            Err(_) => {
-                                println!("Failed to move {} to {}", dest, final_dest);
-                            }
-                        };
-                    } else {
-                        do_loop -= 1;
-                        println!("Hash did not match, try downloading again later...");
-                    }
-                }
-                Err(_) => {
-                    println!("Failed downloading, trying again {}", filename);
-                }
-            };
-        }
-    } else {
-        println!("{} already exists", exp_dest);
+    if tokio::fs::try_exists(final_dest.as_str()).await? {
+        println!("{} already exists", final_dest);
+        return Ok(());
     }
 
+    let dest: String = {
+        let mut tmpstr: String = String::from(TMP);
+        tmpstr.push('/');
+        tmpstr.push_str(sha256);
+        tmpstr
+    };
+
+    let url: String = {
+        let mut ret = String::from(base_url);
+        ret.push('/');
+        ret.push_str(filename);
+        ret
+    };
+
+    const num_tries: u8 = 4 as u8;
+
+    for _ in 0..num_tries {
+        match download(url.as_str(), dest.as_str()).await {
+            Err(_) => {
+                println!("Failed downloading, trying again {}", filename);
+            }
+            Ok(_) => {
+                let data = tokio::fs::read(&dest).await?;
+                let hash = sha256::digest(&data);
+
+                if sha256.eq(hash.as_str()) {
+                    match tokio::fs::rename(dest.as_str(), final_dest.as_str()).await {
+                        Err(_) => {
+                            println!("Failed to move {} to {}", dest, final_dest);
+                        }
+                        Ok(_) => {
+                            return Ok(());
+                        }
+                    };
+                } else {
+                    println!("Hash did not match, try downloading again later...");
+                    tokio::fs::remove_file(&dest).await?;
+                }
+            }
+        }
+    }
+
+    return Err(anyhow::format_err!(
+        "Failed to download the file {}",
+        filename
+    ));
+}
+
+async fn download_package_list_in_pool(
+    inputs: std::sync::Arc<Vec<package_pair>>,
+    base_2: std::sync::Arc<Vec<&str>>,
+    counter: std::sync::Arc<std::sync::atomic::AtomicU64>,
+) -> anyhow::Result<()> {
     Ok(())
 }
 
@@ -454,12 +452,6 @@ pub async fn download_pool() -> anyhow::Result<()> {
     let meta_data = read_packages().await?;
     println!("{:?}", meta_data);
     return Ok(());
-    let m = Mutex::new(0);
-
-    let pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(NUM_THREADS)
-        .build()
-        .unwrap();
 
     pool.install(|| {
         meta_data
