@@ -482,10 +482,11 @@ pub async fn download_pool() -> anyhow::Result<()> {
     let mut handles = Vec::new();
 
     for _ in 0..num_threads {
-        let data_ref = std::sync::Arc::clone(&meta_data);
-        let index_ref = std::sync::Arc::clone(&counter);
-        let tmp = download_package_list_in_pool(data_ref, std::sync::Arc::clone(&urls), index_ref);
-        handles.push(tmp);
+        handles.push(download_package_list_in_pool(
+            std::sync::Arc::clone(&meta_data),
+            std::sync::Arc::clone(&urls),
+            std::sync::Arc::clone(&counter),
+        ));
     }
 
     futures::future::join_all(handles).await;
