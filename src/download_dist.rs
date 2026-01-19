@@ -494,40 +494,56 @@ pub async fn download_pool() -> anyhow::Result<()> {
     return Ok(());
 }
 
-pub fn download_dist() {
-    let base = read_list_url_mirrors();
+pub async fn download_dist() -> anyhow::Result<()> {
+    let base = read_list_url_mirrors().await?;
     let base_s: Vec<&str> = base.split('\n').collect();
     let mut base = String::from(base_s[0]);
     base.push('/');
 
-    let files = read_list_dist_packages();
-    let files_s: Vec<&str> = files
+    let list_dist_packages = read_list_dist_packages().await?;
+
+    let files: Vec<&str> = list_dist_packages
         .split('\n')
         .filter(|x| x.len() > 0)
         .map(|x| {
             mkdir(x);
             link_pool_in_dist(x);
-            x
+            return x;
         })
         .collect();
 
-    files_s.par_iter().for_each(|x| {
-        let mut url: String = base.clone();
-        url.push_str(x);
+    let urls: Vec<String> = files
+        .iter()
+        .map(|x| {
+            let mut url: String = base.clone();
+            url.push_str(x);
+            return url;
+        })
+        .collect();
 
-        let mut do_loop: bool = true;
+    let mut handles = Vec::new();
+    for (file, url) in files.iter().zip(urls.iter()) {
+        let tmp = download(url, file);
+        handles.push(tmp);
+    }
 
-        while do_loop {
-            match download(url.as_str(), x) {
-                Ok(_) => {
-                    do_loop = false;
-                }
-                Err(_) => {
-                    println!("Downloading {} failed, trying again...", url);
-                }
-            };
-        }
-    });
+    let results = futures::future::join_all(handles).await;
+
+    for (result, filename) in results.iter().zip(files.iter()) {
+        match result {
+            Err(e) => {
+                println!();
+                return Err(anyhow::format_err!(
+                    "Failed to download dist files {} due to {}",
+                    filename,
+                    e
+                ));
+            }
+            Ok(()) => {}
+        };
+    }
+
+    return Ok(());
 }
 
 pub fn make_config() {
