@@ -4,6 +4,7 @@ extern crate sha256;
 extern crate substring;
 
 use anyhow::Context;
+use futures::StreamExt;
 use rayon::prelude::*;
 use std::cmp::min;
 use std::collections::HashMap;
@@ -527,12 +528,17 @@ pub async fn download_dist() -> anyhow::Result<()> {
         handles.push(tmp);
     }
 
-    let results = futures::future::join_all(handles).await;
+    const batch_size: usize = 16;
+
+    let results = futures::stream::iter(handles)
+        .buffer_unordered(batch_size)
+        .collect::<Vec<_>>()
+        .await;
+    // let results = futures::future::join_all(handles).await;
 
     for (result, filename) in results.iter().zip(files.iter()) {
         match result {
             Err(e) => {
-                println!();
                 return Err(anyhow::format_err!(
                     "Failed to download dist files {} due to {}",
                     filename,
