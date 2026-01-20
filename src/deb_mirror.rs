@@ -5,19 +5,22 @@ use download_dist::download_pool;
 use download_dist::link_pool;
 use download_dist::make_config;
 
-fn main() {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     let args: Vec<_> = std::env::args().collect();
     if args.len() > 1 {
         if args[1].eq("d") {
-            download_dist();
+            return download_dist().await;
         } else if args[1].eq("p") {
-            download_pool();
+            return download_pool().await;
         } else if args[1].eq("c") {
-            clean_sha();
+            return clean_sha().await;
         } else if args[1].eq("l") {
-            link_pool();
+            return link_pool().await;
         } else if args[1].eq("s") {
-            make_config();
+            return make_config().await;
+        } else {
+            return Err(anyhow::format_err!("Unknown command"));
         }
     } else {
         println!("Run with 1 command line argument...");
@@ -26,5 +29,6 @@ fn main() {
         println!("p => download pool");
         println!("c => clean sha256 directory");
         println!("l => link pool files");
+        return Err(anyhow::format_err!("No command given"));
     }
 }
