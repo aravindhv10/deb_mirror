@@ -552,8 +552,9 @@ pub async fn download_dist() -> anyhow::Result<()> {
     return Ok(());
 }
 
-pub fn make_config() {
-    let content: String = read_file("sources.list");
+pub async fn make_config() -> anyhow::Result<()> {
+    let content: String = tokio::fs::read_to_string("sources.list").await?;
+
     let lines: Vec<&str> = content
         .split('\n')
         .filter(|x| x.len() > TEXT_DEB.len())
@@ -722,4 +723,5 @@ pub fn make_config() {
             }
         };
     }
+    Ok(())
 }
