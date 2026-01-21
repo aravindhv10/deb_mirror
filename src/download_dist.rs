@@ -479,7 +479,7 @@ pub async fn download_pool() -> anyhow::Result<()> {
     let meta_data = std::sync::Arc::new(read_packages().await?);
     let counter = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
 
-    const num_threads: u16 = 16;
+    const num_threads: u16 = 24;
     let mut handles = Vec::new();
 
     for _ in 0..num_threads {
