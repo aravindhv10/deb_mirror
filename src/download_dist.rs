@@ -497,21 +497,27 @@ pub async fn download_pool() -> anyhow::Result<()> {
 
 pub async fn download_dist() -> anyhow::Result<()> {
     let base = read_list_url_mirrors().await?;
+    println!("base: {:?}", base);
     let base_s: Vec<&str> = base.split('\n').collect();
+    println!("base_s: {:?}", base_s);
     let mut base = String::from(base_s[0]);
     base.push('/');
 
     let list_dist_packages = read_list_dist_packages().await?;
+    println!("1");
+
+    async fn link_slave(filename: &str, url: &str) -> anyhow::Result<()> {
+        mkdir(filename).await?;
+        link_pool_in_dist(filename).await;
+        download(url, filename).await
+    }
 
     let files: Vec<&str> = list_dist_packages
         .split('\n')
         .filter(|x| x.len() > 0)
-        .map(|x| {
-            mkdir(x);
-            link_pool_in_dist(x);
-            return x;
-        })
         .collect();
+
+    println!("files: {:?}", files);
 
     let urls: Vec<String> = files
         .iter()
@@ -522,9 +528,11 @@ pub async fn download_dist() -> anyhow::Result<()> {
         })
         .collect();
 
+    println!("urls: {:?}", urls);
+
     let mut handles = Vec::new();
     for (file, url) in files.iter().zip(urls.iter()) {
-        let tmp = download(url, file);
+        let tmp = link_slave(file, url);
         handles.push(tmp);
     }
 
@@ -539,11 +547,7 @@ pub async fn download_dist() -> anyhow::Result<()> {
     for (result, filename) in results.iter().zip(files.iter()) {
         match result {
             Err(e) => {
-                return Err(anyhow::format_err!(
-                    "Failed to download dist files {} due to {}",
-                    filename,
-                    e
-                ));
+                println!("Failed to download dist files {} due to {}", filename, e);
             }
             Ok(()) => {}
         };
