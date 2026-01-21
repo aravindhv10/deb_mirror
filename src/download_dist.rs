@@ -32,6 +32,35 @@ const WASTE: &str = "WASTE";
 
 const NUM_THREADS: usize = 24;
 
+fn map_num_url_to_num_threads(num_url: u16) -> u16 {
+    match num_url {
+        0 => {
+            return 1;
+        }
+        1 => {
+            return 4;
+        }
+        2 => {
+            return 8;
+        }
+        3 => {
+            return 12;
+        }
+        4 => {
+            return 16;
+        }
+        5 => {
+            return 20;
+        }
+        6 => {
+            return 24;
+        }
+        _ => {
+            return 24;
+        }
+    }
+}
+
 async fn read_list_url_mirrors() -> anyhow::Result<String> {
     tokio::fs::read_to_string("list.url_mirrors.txt")
         .await
@@ -283,15 +312,23 @@ async fn link_pool_package(
 }
 
 pub async fn link_pool() -> anyhow::Result<()> {
+    async fn slave(x: &str) -> anyhow::Result<()> {
+        mkdir(x).await?;
+        link_pool_in_dist(x).await;
+        Ok(())
+    }
+
+    const num_threads: usize = 16;
+
     let files = read_list_dist_packages().await?;
-    files.split('\n').filter(|x| x.len() > 0).for_each(|x| {
-        mkdir(x);
-        link_pool_in_dist(x);
-    });
+
+    futures::stream::iter(files.split('\n').filter(|x| x.len() > 0).map(|x| slave(x)))
+        .buffer_unordered(num_threads)
+        .collect::<Vec<_>>()
+        .await;
 
     let meta_data = std::sync::Arc::new(read_packages().await?);
     let counter = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
-    const num_threads: u16 = 16;
     let mut handles = Vec::new();
 
     for _ in 0..num_threads {
@@ -474,12 +511,11 @@ pub async fn download_pool() -> anyhow::Result<()> {
 
     let base_1 = read_list_url_mirrors().await?;
     let base_2: Vec<&str> = base_1.split('\n').filter(|x| x.len() > 7).collect();
+    let num_threads = map_num_url_to_num_threads((&base_2).len() as u16);
     let urls = std::sync::Arc::new(base_2);
-
     let meta_data = std::sync::Arc::new(read_packages().await?);
     let counter = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
 
-    const num_threads: u16 = 24;
     let mut handles = Vec::new();
 
     for _ in 0..num_threads {
