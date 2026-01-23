@@ -38,23 +38,8 @@ fn map_num_url_to_num_threads(num_url: u16) -> u16 {
         1 => {
             return 4;
         }
-        2 => {
-            return 8;
-        }
-        3 => {
-            return 12;
-        }
-        4 => {
-            return 16;
-        }
-        5 => {
-            return 20;
-        }
-        6 => {
-            return 24;
-        }
         _ => {
-            return 24;
+            return 8;
         }
     }
 }
