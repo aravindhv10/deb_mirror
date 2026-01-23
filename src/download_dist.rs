@@ -30,8 +30,6 @@ const STORE: &str = "SHA256";
 const TMP: &str = "TMP";
 const WASTE: &str = "WASTE";
 
-const NUM_THREADS: usize = 24;
-
 fn map_num_url_to_num_threads(num_url: u16) -> u16 {
     match num_url {
         0 => {
@@ -73,15 +71,34 @@ async fn read_list_dist_packages() -> anyhow::Result<String> {
         .with_context(|| format!("failed to read list.dist_packages.txt"))
 }
 
-async fn download_wget(url: &str, file_name: &str) -> anyhow::Result<ExitStatus> {
-    tokio::process::Command::new("wget")
+async fn download_wget(url: &str, file_name: &str) -> anyhow::Result<()> {
+    let res = tokio::process::Command::new("wget")
         .arg("-c")
         .arg(url)
         .arg("-O")
         .arg(file_name)
         .status()
-        .await
-        .with_context(|| format!("Failed to download url {} to file {}", url, file_name))
+        .await?;
+
+    match res.code() {
+        Some(c) => {
+            if c == 0 {
+                Ok(())
+            } else {
+                Err(anyhow::format_err!(
+                    "Failed to download file {} from url {}. Wget had exit status {}",
+                    file_name,
+                    url,
+                    c
+                ))
+            }
+        }
+        None => Err(anyhow::format_err!(
+            "Failed to download file {} from url {}. Wget terminated",
+            file_name,
+            url,
+        )),
+    }
 }
 
 async fn download_reqwest(url: &str, file_name: impl AsRef<Path>) -> anyhow::Result<()> {
@@ -112,7 +129,7 @@ async fn download_reqwest(url: &str, file_name: impl AsRef<Path>) -> anyhow::Res
 }
 
 async fn download(url: &str, file_name: &str) -> anyhow::Result<()> {
-    download_reqwest(url, file_name).await
+    download_wget(url, file_name).await
 }
 
 async fn mkdir(loc: &str) -> anyhow::Result<()> {
