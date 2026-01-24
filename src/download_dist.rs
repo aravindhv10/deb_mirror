@@ -86,6 +86,38 @@ async fn download_wget(url: &str, file_name: &str) -> anyhow::Result<()> {
     }
 }
 
+async fn download_aria(url: &str, file_name: &str) -> anyhow::Result<()> {
+    let res = tokio::process::Command::new("aria2c")
+        .arg("-c")
+        .arg("-x4")
+        .arg("-j4")
+        .arg(url)
+        .arg("-o")
+        .arg(file_name)
+        .status()
+        .await?;
+
+    match res.code() {
+        Some(c) => {
+            if c == 0 {
+                Ok(())
+            } else {
+                Err(anyhow::format_err!(
+                    "Failed to download file {} from url {}. Wget had exit status {}",
+                    file_name,
+                    url,
+                    c
+                ))
+            }
+        }
+        None => Err(anyhow::format_err!(
+            "Failed to download file {} from url {}. Wget terminated",
+            file_name,
+            url,
+        )),
+    }
+}
+
 async fn download_reqwest(url: &str, file_name: impl AsRef<Path>) -> anyhow::Result<()> {
     let response = reqwest::get(url)
         .await
@@ -114,7 +146,7 @@ async fn download_reqwest(url: &str, file_name: impl AsRef<Path>) -> anyhow::Res
 }
 
 async fn download(url: &str, file_name: &str) -> anyhow::Result<()> {
-    download_wget(url, file_name).await
+    download_aria(url, file_name).await
 }
 
 async fn mkdir(loc: &str) -> anyhow::Result<()> {
