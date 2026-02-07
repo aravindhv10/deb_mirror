@@ -6,6 +6,7 @@ extern crate substring;
 use anyhow::Context;
 use futures::StreamExt;
 use rayon::prelude::*;
+use sha2::Digest;
 use std::cmp::min;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -29,6 +30,15 @@ const TEXT_HTTPS: &str = "https://";
 const STORE: &str = "SHA256";
 const TMP: &str = "TMP";
 const WASTE: &str = "WASTE";
+
+async fn sha256_digest(dest: &str) -> anyhow::Result<String> {
+    let data = tokio::fs::read(&dest).await?;
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(data);
+    let result = hasher.finalize();
+    let ret = hex::encode(result);
+    Ok(ret)
+}
 
 fn map_num_url_to_num_threads(num_url: u16) -> u16 {
     match num_url {
@@ -480,9 +490,7 @@ async fn download_sha256_in_pool(
                 println!("Failed downloading, trying again {}", filename);
             }
             Ok(_) => {
-                let data = tokio::fs::read(&dest).await?;
-                let hash = sha256::digest(&data);
-
+                let hash = sha256_digest(&dest).await?;
                 if sha256.eq(hash.as_str()) {
                     match tokio::fs::rename(dest.as_str(), final_dest.as_str()).await {
                         Err(_) => {
