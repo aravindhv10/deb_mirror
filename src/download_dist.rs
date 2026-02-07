@@ -1,5 +1,4 @@
 extern crate reqwest;
-extern crate substring;
 
 use anyhow::Context;
 use futures::StreamExt;
@@ -12,7 +11,6 @@ use std::io::prelude::*;
 use std::path::Path;
 use std::process::ExitStatus;
 use std::sync::Mutex;
-use substring::Substring;
 use tokio::io::AsyncReadExt;
 
 const TEXT_PACKAGE: &str = "Package: ";
@@ -289,13 +287,13 @@ async fn read_packages() -> anyhow::Result<package_pair_list> {
             }
             LoopState::NeedVersion => {
                 if match_begin(x, TEXT_VERSION) {
-                    version = String::from(x.substring(TEXT_VERSION.len(), x.len()));
+                    version = x[TEXT_VERSION.len()..].to_string();
                     current_state = LoopState::NeedFilename;
                 }
             }
             LoopState::NeedFilename => {
                 if match_begin(x, TEXT_FILENAME) {
-                    filename = String::from(x.substring(TEXT_FILENAME.len(), x.len()));
+                    filename = x[TEXT_FILENAME.len()..].to_string();
                     if (has_dbg(&filename)) || (has_dbgsym(&filename)) {
                         current_state = LoopState::NeedPackage;
                     } else {
@@ -305,7 +303,7 @@ async fn read_packages() -> anyhow::Result<package_pair_list> {
             }
             LoopState::NeedSha256 => {
                 if match_begin(x, TEXT_SHA256) {
-                    sha256 = String::from(x.substring(TEXT_SHA256.len(), x.len()));
+                    sha256 = x[TEXT_SHA256.len()..].to_string();
                     current_state = LoopState::NeedPackage;
                     meta_data.push(package_pair {
                         sha256: sha256.clone(),
