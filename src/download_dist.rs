@@ -1,11 +1,8 @@
-extern crate rayon;
 extern crate reqwest;
-extern crate sha256;
 extern crate substring;
 
 use anyhow::Context;
 use futures::StreamExt;
-use rayon::prelude::*;
 use sha2::Digest;
 use std::cmp::min;
 use std::collections::HashMap;
