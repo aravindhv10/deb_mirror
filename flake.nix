@@ -23,7 +23,7 @@
           # This hash ensures reproducibility. If you change dependencies, 
           # Nix will give you a new hash to put here.
           # You can set this to lib.fakeHash initially to find the correct one.
-          cargoHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+          cargoHash = "sha256-HX9zzpz9XTOvgjSk97kBIs3lLQsXBJKQwbVS5prbKGI=";
 
           nativeBuildInputs = with pkgs; [ pkg-config ];
           buildInputs = with pkgs; [ openssl ];
