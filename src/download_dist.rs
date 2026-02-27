@@ -1,11 +1,8 @@
-extern crate rayon;
 extern crate reqwest;
-extern crate sha256;
-extern crate substring;
 
 use anyhow::Context;
 use futures::StreamExt;
-use rayon::prelude::*;
+use sha2::Digest;
 use std::cmp::min;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -14,7 +11,6 @@ use std::io::prelude::*;
 use std::path::Path;
 use std::process::ExitStatus;
 use std::sync::Mutex;
-use substring::Substring;
 use tokio::io::AsyncReadExt;
 
 const TEXT_PACKAGE: &str = "Package: ";
@@ -29,6 +25,15 @@ const TEXT_HTTPS: &str = "https://";
 const STORE: &str = "SHA256";
 const TMP: &str = "TMP";
 const WASTE: &str = "WASTE";
+
+async fn sha256_digest(dest: &str) -> anyhow::Result<String> {
+    let data = tokio::fs::read(&dest).await?;
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(data);
+    let result = hasher.finalize();
+    let ret = hex::encode(result);
+    Ok(ret)
+}
 
 fn map_num_url_to_num_threads(num_url: u16) -> u16 {
     match num_url {
@@ -282,13 +287,13 @@ async fn read_packages() -> anyhow::Result<package_pair_list> {
             }
             LoopState::NeedVersion => {
                 if match_begin(x, TEXT_VERSION) {
-                    version = String::from(x.substring(TEXT_VERSION.len(), x.len()));
+                    version = x[TEXT_VERSION.len()..].to_string();
                     current_state = LoopState::NeedFilename;
                 }
             }
             LoopState::NeedFilename => {
                 if match_begin(x, TEXT_FILENAME) {
-                    filename = String::from(x.substring(TEXT_FILENAME.len(), x.len()));
+                    filename = x[TEXT_FILENAME.len()..].to_string();
                     if (has_dbg(&filename)) || (has_dbgsym(&filename)) {
                         current_state = LoopState::NeedPackage;
                     } else {
@@ -298,7 +303,7 @@ async fn read_packages() -> anyhow::Result<package_pair_list> {
             }
             LoopState::NeedSha256 => {
                 if match_begin(x, TEXT_SHA256) {
-                    sha256 = String::from(x.substring(TEXT_SHA256.len(), x.len()));
+                    sha256 = x[TEXT_SHA256.len()..].to_string();
                     current_state = LoopState::NeedPackage;
                     meta_data.push(package_pair {
                         sha256: sha256.clone(),
@@ -480,9 +485,7 @@ async fn download_sha256_in_pool(
                 println!("Failed downloading, trying again {}", filename);
             }
             Ok(_) => {
-                let data = tokio::fs::read(&dest).await?;
-                let hash = sha256::digest(&data);
-
+                let hash = sha256_digest(&dest).await?;
                 if sha256.eq(hash.as_str()) {
                     match tokio::fs::rename(dest.as_str(), final_dest.as_str()).await {
                         Err(_) => {
